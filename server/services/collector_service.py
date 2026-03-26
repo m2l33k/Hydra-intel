@@ -10,7 +10,11 @@ import threading
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from collectors import GitHubCollector, CVECollector, RedditCollector, PastebinCollector, TelegramCollector, WhatsAppCollector
+from collectors import (
+    GitHubCollector, CVECollector, RedditCollector, PastebinCollector,
+    TelegramCollector, WhatsAppCollector, SocialMediaCollector,
+    DNSCollector, InfrastructureCollector, LeakCollector, DarkWebCollector,
+)
 from collectors.base import BaseCollector
 from core.http_client import HttpClient
 from core.normalizer import Normalizer
@@ -88,6 +92,11 @@ class CollectorService:
             "pastebin": CollectorState("Pastebin Scraper", "pastebin", TargetType.PASTE_LEAKS.value),
             "telegram": CollectorState("Telegram Monitor", "telegram", TargetType.TELEGRAM_INTEL.value),
             "whatsapp": CollectorState("WhatsApp Monitor", "whatsapp", TargetType.WHATSAPP_INTEL.value),
+            "social_media": CollectorState("Social Media OSINT", "social_media", TargetType.SOCIAL_MEDIA_INTEL.value),
+            "dns": CollectorState("DNS Recon", "dns", TargetType.DNS_INTEL.value),
+            "infrastructure": CollectorState("Infrastructure Scanner", "infrastructure", TargetType.INFRASTRUCTURE_INTEL.value),
+            "leak_detection": CollectorState("Leak Detection", "leak_detection", TargetType.PASTE_LEAKS.value),
+            "dark_web": CollectorState("Dark Web Monitor", "dark_web", TargetType.DARK_WEB.value),
         }
 
     def _create_collector(self, source: str) -> Optional[BaseCollector]:
@@ -99,6 +108,11 @@ class CollectorService:
             "pastebin": lambda: PastebinCollector(self.http_client, tool_manager=self.tool_manager),
             "telegram": lambda: TelegramCollector(self.http_client, tool_manager=self.tool_manager),
             "whatsapp": lambda: WhatsAppCollector(self.http_client, tool_manager=self.tool_manager),
+            "social_media": lambda: SocialMediaCollector(self.http_client, tool_manager=self.tool_manager),
+            "dns": lambda: DNSCollector(self.http_client, tool_manager=self.tool_manager),
+            "infrastructure": lambda: InfrastructureCollector(self.http_client, tool_manager=self.tool_manager),
+            "leak_detection": lambda: LeakCollector(self.http_client, tool_manager=self.tool_manager),
+            "dark_web": lambda: DarkWebCollector(self.http_client, tool_manager=self.tool_manager),
         }
         factory = collectors.get(source)
         if factory:
@@ -160,6 +174,11 @@ class CollectorService:
             "pastebin": "password",
             "telegram": "breach OR malware OR stealer",
             "whatsapp": "security OR credentials",
+            "social_media": "security breach threat",
+            "dns": "example.com",
+            "infrastructure": "apache",
+            "leak_detection": "password",
+            "dark_web": "marketplace credentials",
         }
         query = query or default_queries.get(source, "")
 

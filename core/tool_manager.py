@@ -429,6 +429,44 @@ class ToolManager:
         self.executor_registry.register("wa-group-link-scraper", self._exec_wa_group_link_scraper)
         self.executor_registry.register("whatsapp-web-api", self._exec_whatsapp_web_api)
 
+        # New Social Media tools
+        self.executor_registry.register("blackbird", self._exec_blackbird)
+        self.executor_registry.register("whatsmyname", self._exec_whatsmyname)
+        self.executor_registry.register("namechk", self._exec_namechk)
+        self.executor_registry.register("userrecon", self._exec_userrecon)
+        self.executor_registry.register("twint", self._exec_twint)
+        self.executor_registry.register("social-searcher", self._exec_social_searcher)
+
+        # New Telegram tools
+        self.executor_registry.register("pyrogram", self._exec_pyrogram)
+        self.executor_registry.register("tgscraper", self._exec_tgscraper)
+        self.executor_registry.register("telegram-dump", self._exec_telegram_dump)
+
+        # New Reddit tools
+        self.executor_registry.register("reddit-stream", self._exec_reddit_stream)
+        self.executor_registry.register("reddit-scraper", self._exec_reddit_scraper)
+        self.executor_registry.register("snoopsnoo", self._exec_snoopsnoo)
+
+        # New Infrastructure tools
+        self.executor_registry.register("netlas", self._exec_netlas)
+        self.executor_registry.register("securitytrails", self._exec_securitytrails)
+        self.executor_registry.register("ipinfo", self._exec_ipinfo)
+        self.executor_registry.register("httpx", self._exec_httpx)
+
+        # New DNS tools
+        self.executor_registry.register("assetfinder", self._exec_assetfinder)
+        self.executor_registry.register("dnsdumpster", self._exec_dnsdumpster)
+        self.executor_registry.register("waybackurls", self._exec_waybackurls)
+        self.executor_registry.register("gau", self._exec_gau)
+        self.executor_registry.register("katana", self._exec_katana)
+
+        # Leak Detection tools
+        self.executor_registry.register("haveibeenpwned", self._exec_haveibeenpwned)
+        self.executor_registry.register("dehashed", self._exec_dehashed)
+        self.executor_registry.register("snusbase", self._exec_snusbase)
+        self.executor_registry.register("leakcheck", self._exec_leakcheck)
+        self.executor_registry.register("leaklookup", self._exec_leaklookup)
+
     # ------------------------------------------------------------------
     # Built-in executors — GitHub
     # ------------------------------------------------------------------
@@ -1778,6 +1816,657 @@ class ToolManager:
             metadata["collected_by"] = "ivre_fallback_shodan"
             item["metadata"] = metadata
         return shodan_results
+
+    # ------------------------------------------------------------------
+    # Built-in executors — New Social Media tools
+    # ------------------------------------------------------------------
+
+    def _exec_blackbird(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess, json
+        try:
+            cmd = ["blackbird", "--username", query, "--json"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            results = []
+            try:
+                data = json.loads(result.stdout)
+                for site in (data if isinstance(data, list) else data.get("results", []))[:max_results]:
+                    if site.get("status", "").lower() in ("found", "claimed"):
+                        results.append({
+                            "source": "blackbird",
+                            "type": "mention",
+                            "title": f"@{query} on {site.get('site', site.get('name', 'unknown'))}",
+                            "content": f"Profile found for '{query}'",
+                            "url": site.get("url", ""),
+                            "metadata": {"site": site.get("site", site.get("name")), "status": "found"}
+                        })
+            except json.JSONDecodeError:
+                for line in result.stdout.strip().split("\n"):
+                    if "[+]" in line or "FOUND" in line.upper():
+                        results.append({
+                            "source": "blackbird",
+                            "type": "mention",
+                            "title": f"Username match: {line.strip()}",
+                            "content": line.strip(),
+                            "url": "",
+                            "metadata": {}
+                        })
+            return results[:max_results]
+        except FileNotFoundError:
+            raise ValueError("blackbird not installed")
+
+    def _exec_whatsmyname(self, tool, query, max_results, **kw) -> List[dict]:
+        from core.http_client import HttpClient
+        with HttpClient() as client:
+            # Use WhatsMyName web_accounts_list.json for username enumeration
+            data = client.get_json(
+                "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
+            )
+            if not data or "sites" not in data:
+                return []
+            import requests
+            results = []
+            session = requests.Session()
+            session.headers["User-Agent"] = "HYDRA-INTEL/1.0"
+            for site in data["sites"][:50]:  # Check first 50 sites
+                check_url = site.get("uri_check", "").replace("{account}", query)
+                if not check_url:
+                    continue
+                try:
+                    resp = session.get(check_url, timeout=5, allow_redirects=True)
+                    account_existence_code = site.get("e_code", 200)
+                    if resp.status_code == account_existence_code:
+                        results.append({
+                            "source": "whatsmyname",
+                            "type": "mention",
+                            "title": f"@{query} on {site.get('name', 'unknown')}",
+                            "content": f"Profile found at {check_url}",
+                            "url": check_url,
+                            "metadata": {"site": site.get("name"), "category": site.get("cat")}
+                        })
+                except Exception:
+                    continue
+                if len(results) >= max_results:
+                    break
+            return results
+
+    def _exec_namechk(self, tool, query, max_results, **kw) -> List[dict]:
+        # Namechk doesn't have a public API — use sherlock as fallback
+        return self._exec_sherlock(tool, query, max_results, **kw)
+
+    def _exec_userrecon(self, tool, query, max_results, **kw) -> List[dict]:
+        # UserRecon is a bash script — fallback to sherlock
+        return self._exec_sherlock(tool, query, max_results, **kw)
+
+    def _exec_twint(self, tool, query, max_results, **kw) -> List[dict]:
+        try:
+            import subprocess, json
+            cmd = ["twint", "-s", query, "--json", "-o", "-", "--limit", str(max_results)]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            results = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                try:
+                    tweet = json.loads(line)
+                    results.append({
+                        "source": "twint",
+                        "type": "mention",
+                        "title": f"Tweet by @{tweet.get('username', 'unknown')}",
+                        "content": tweet.get("tweet", "")[:2000],
+                        "url": tweet.get("link", ""),
+                        "metadata": {
+                            "username": tweet.get("username"),
+                            "date": tweet.get("date"),
+                            "likes": tweet.get("likes_count"),
+                            "retweets": tweet.get("retweets_count"),
+                            "hashtags": tweet.get("hashtags"),
+                        }
+                    })
+                except json.JSONDecodeError:
+                    continue
+            return results[:max_results]
+        except FileNotFoundError:
+            raise ValueError("twint not installed")
+
+    def _exec_social_searcher(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("SOCIAL_SEARCHER_API_KEY")
+        if not api_key:
+            raise ValueError("SOCIAL_SEARCHER_API_KEY not set")
+        resp = requests.get(
+            "https://api.social-searcher.com/v2/search",
+            params={"q": query, "key": api_key, "limit": max_results},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"Social Searcher API error: {resp.status_code}")
+        data = resp.json()
+        results = []
+        for post in data.get("posts", [])[:max_results]:
+            results.append({
+                "source": "social-searcher",
+                "type": "mention",
+                "title": post.get("text", "")[:120],
+                "content": post.get("text", "")[:2000],
+                "url": post.get("url", ""),
+                "metadata": {
+                    "network": post.get("network"),
+                    "user": post.get("user", {}).get("name"),
+                    "sentiment": post.get("sentiment"),
+                    "posted": post.get("posted"),
+                }
+            })
+        return results
+
+    # ------------------------------------------------------------------
+    # Built-in executors — New Telegram tools
+    # ------------------------------------------------------------------
+
+    def _exec_pyrogram(self, tool, query, max_results, **kw) -> List[dict]:
+        import os
+        api_id = os.environ.get("TELEGRAM_API_ID")
+        api_hash = os.environ.get("TELEGRAM_API_HASH")
+        if not api_id or not api_hash:
+            raise ValueError("TELEGRAM_API_ID and TELEGRAM_API_HASH required")
+        # Pyrogram requires interactive auth like Telethon — fallback to bot API
+        raise ValueError("Pyrogram requires interactive auth — use telegram-bot-api for automated collection")
+
+    def _exec_tgscraper(self, tool, query, max_results, **kw) -> List[dict]:
+        # tgscraper is PHP-based — fallback to telegram-bot-api
+        return self._exec_telegram_bot(tool, query, max_results, **kw)
+
+    def _exec_telegram_dump(self, tool, query, max_results, **kw) -> List[dict]:
+        # Delegates to telegram-history-dump for export parsing
+        return self._exec_telegram_history_dump(tool, query, max_results, **kw)
+
+    # ------------------------------------------------------------------
+    # Built-in executors — New Reddit tools
+    # ------------------------------------------------------------------
+
+    def _exec_reddit_stream(self, tool, query, max_results, **kw) -> List[dict]:
+        import os
+        client_id = os.environ.get("REDDIT_CLIENT_ID")
+        client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            raise ValueError("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET required")
+        try:
+            import praw
+            reddit = praw.Reddit(
+                client_id=client_id,
+                client_secret=client_secret,
+                user_agent="HYDRA-INTEL/1.0"
+            )
+            results = []
+            # Get recent submissions from security subreddits
+            for sub_name in ["netsec", "cybersecurity"]:
+                sub = reddit.subreddit(sub_name)
+                for post in sub.new(limit=max_results // 2):
+                    text = f"{post.title} {post.selftext}".lower()
+                    if query and query.lower() not in text:
+                        continue
+                    results.append({
+                        "source": "reddit",
+                        "type": "mention",
+                        "title": post.title,
+                        "content": (post.selftext or "")[:2000],
+                        "url": f"https://reddit.com{post.permalink}",
+                        "metadata": {
+                            "subreddit": sub_name,
+                            "author": str(post.author),
+                            "score": post.score,
+                            "created_utc": post.created_utc,
+                            "collected_by": "reddit-stream",
+                        }
+                    })
+                    if len(results) >= max_results:
+                        break
+            return results[:max_results]
+        except ImportError:
+            raise ValueError("praw not installed")
+
+    def _exec_reddit_scraper(self, tool, query, max_results, **kw) -> List[dict]:
+        return self._exec_reddit_html(tool, query, max_results, **kw)
+
+    def _exec_snoopsnoo(self, tool, query, max_results, **kw) -> List[dict]:
+        from core.http_client import HttpClient
+        with HttpClient() as client:
+            resp = client.get(f"https://www.snoopsnoo.com/u/{query}")
+            if not resp or resp.status_code != 200:
+                return []
+            from core.parser import parse_html
+            soup = parse_html(resp.text)
+            summary = soup.select_one(".user-summary")
+            return [{
+                "source": "snoopsnoo",
+                "type": "mention",
+                "title": f"Reddit user profile: u/{query}",
+                "content": summary.get_text(strip=True)[:2000] if summary else f"Profile for u/{query}",
+                "url": f"https://www.snoopsnoo.com/u/{query}",
+                "metadata": {"username": query, "collected_by": "snoopsnoo"}
+            }]
+
+    # ------------------------------------------------------------------
+    # Built-in executors — New Infrastructure tools
+    # ------------------------------------------------------------------
+
+    def _exec_netlas(self, tool, query, max_results, **kw) -> List[dict]:
+        import os
+        api_key = os.environ.get("NETLAS_API_KEY")
+        if not api_key:
+            raise ValueError("NETLAS_API_KEY not set")
+        try:
+            import netlas
+            conn = netlas.Netlas(api_key=api_key)
+            results = []
+            for item in conn.query(query or "apache")["items"][:max_results]:
+                data = item.get("data", {})
+                ip = data.get("ip", "")
+                results.append({
+                    "source": "netlas",
+                    "type": "alert",
+                    "title": f"Host: {ip}:{data.get('port', '')}",
+                    "content": str(data.get("http", {}).get("title", ""))[:2000],
+                    "url": f"https://app.netlas.io/host/{ip}",
+                    "metadata": {
+                        "ip": ip,
+                        "port": data.get("port"),
+                        "protocol": data.get("protocol"),
+                        "geo": data.get("geo"),
+                    }
+                })
+            return results
+        except ImportError:
+            raise ValueError("netlas package not installed")
+
+    def _exec_securitytrails(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("SECURITYTRAILS_API_KEY")
+        if not api_key:
+            raise ValueError("SECURITYTRAILS_API_KEY not set")
+        headers = {"APIKEY": api_key, "Accept": "application/json"}
+        # Domain info + subdomains
+        resp = requests.get(
+            f"https://api.securitytrails.com/v1/domain/{query}/subdomains",
+            headers=headers, timeout=30,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"SecurityTrails API error: {resp.status_code}")
+        data = resp.json()
+        results = []
+        for sub in data.get("subdomains", [])[:max_results]:
+            full_domain = f"{sub}.{query}"
+            results.append({
+                "source": "securitytrails",
+                "type": "alert",
+                "title": f"Subdomain: {full_domain}",
+                "content": f"Discovered subdomain for {query}: {full_domain}",
+                "url": f"https://securitytrails.com/domain/{query}",
+                "metadata": {"parent_domain": query, "subdomain": full_domain}
+            })
+        return results
+
+    def _exec_ipinfo(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("IPINFO_API_KEY")
+        headers = {"Accept": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        resp = requests.get(
+            f"https://ipinfo.io/{query}/json",
+            headers=headers, timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return [{
+            "source": "ipinfo",
+            "type": "alert",
+            "title": f"IP Info: {data.get('ip', query)}",
+            "content": f"Org: {data.get('org', '')} | Location: {data.get('city', '')}, {data.get('region', '')}, {data.get('country', '')}",
+            "url": f"https://ipinfo.io/{query}",
+            "metadata": {
+                "ip": data.get("ip"),
+                "hostname": data.get("hostname"),
+                "org": data.get("org"),
+                "city": data.get("city"),
+                "region": data.get("region"),
+                "country": data.get("country"),
+                "loc": data.get("loc"),
+                "asn": data.get("asn"),
+            }
+        }]
+
+    def _exec_httpx(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess, json
+        try:
+            cmd = ["httpx", "-u", query, "-json", "-silent", "-title", "-status-code",
+                   "-tech-detect", "-follow-redirects"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            results = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                    results.append({
+                        "source": "httpx",
+                        "type": "alert",
+                        "title": f"HTTP: {item.get('url', query)} [{item.get('status_code', '')}]",
+                        "content": f"Title: {item.get('title', '')} | Tech: {item.get('tech', [])}",
+                        "url": item.get("url", ""),
+                        "metadata": {
+                            "url": item.get("url"),
+                            "status_code": item.get("status_code"),
+                            "title": item.get("title"),
+                            "tech": item.get("tech"),
+                            "content_length": item.get("content_length"),
+                            "webserver": item.get("webserver"),
+                        }
+                    })
+                except json.JSONDecodeError:
+                    continue
+            return results[:max_results]
+        except FileNotFoundError:
+            raise ValueError("httpx not installed")
+
+    # ------------------------------------------------------------------
+    # Built-in executors — New DNS tools
+    # ------------------------------------------------------------------
+
+    def _exec_assetfinder(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess
+        try:
+            cmd = ["assetfinder", "--subs-only", query]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            subdomains = [s.strip() for s in result.stdout.strip().split("\n") if s.strip()]
+            return [
+                {
+                    "source": "assetfinder",
+                    "type": "alert",
+                    "title": f"Subdomain: {sub}",
+                    "content": f"Discovered subdomain for {query}: {sub}",
+                    "url": f"https://{sub}",
+                    "metadata": {"parent_domain": query, "subdomain": sub}
+                }
+                for sub in subdomains[:max_results]
+            ]
+        except FileNotFoundError:
+            raise ValueError("assetfinder not installed")
+
+    def _exec_dnsdumpster(self, tool, query, max_results, **kw) -> List[dict]:
+        import requests
+        # Use HackerTarget API (same data source as DNSDumpster)
+        resp = requests.get(
+            f"https://api.hackertarget.com/hostsearch/?q={query}",
+            timeout=30,
+        )
+        if resp.status_code != 200 or "error" in resp.text.lower():
+            return []
+        results = []
+        for line in resp.text.strip().split("\n"):
+            if "," in line:
+                host, ip = line.split(",", 1)
+                results.append({
+                    "source": "dnsdumpster",
+                    "type": "alert",
+                    "title": f"Host: {host.strip()} ({ip.strip()})",
+                    "content": f"Discovered host for {query}",
+                    "url": f"https://{host.strip()}",
+                    "metadata": {"host": host.strip(), "ip": ip.strip(), "parent_domain": query}
+                })
+        return results[:max_results]
+
+    def _exec_waybackurls(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess
+        try:
+            cmd = ["waybackurls", query]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            urls = [u.strip() for u in result.stdout.strip().split("\n") if u.strip()]
+            return [
+                {
+                    "source": "waybackurls",
+                    "type": "alert",
+                    "title": f"Wayback URL: {url[:100]}",
+                    "content": url,
+                    "url": url,
+                    "metadata": {"domain": query, "collected_by": "waybackurls"}
+                }
+                for url in urls[:max_results]
+            ]
+        except FileNotFoundError:
+            raise ValueError("waybackurls not installed")
+
+    def _exec_gau(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess
+        try:
+            cmd = ["gau", "--threads", "2", query]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            urls = [u.strip() for u in result.stdout.strip().split("\n") if u.strip()]
+            return [
+                {
+                    "source": "gau",
+                    "type": "alert",
+                    "title": f"URL: {url[:100]}",
+                    "content": url,
+                    "url": url,
+                    "metadata": {"domain": query, "collected_by": "gau"}
+                }
+                for url in urls[:max_results]
+            ]
+        except FileNotFoundError:
+            raise ValueError("gau not installed")
+
+    def _exec_katana(self, tool, query, max_results, **kw) -> List[dict]:
+        import subprocess, json
+        try:
+            cmd = ["katana", "-u", query, "-json", "-silent", "-d", "2",
+                   "-jc", "-kf", "all", "-nc"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            results = []
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                    endpoint = item.get("request", {}).get("endpoint", line)
+                    results.append({
+                        "source": "katana",
+                        "type": "alert",
+                        "title": f"Endpoint: {endpoint[:100]}",
+                        "content": endpoint,
+                        "url": endpoint,
+                        "metadata": {
+                            "method": item.get("request", {}).get("method"),
+                            "status_code": item.get("response", {}).get("status_code"),
+                            "collected_by": "katana",
+                        }
+                    })
+                except json.JSONDecodeError:
+                    if line.startswith("http"):
+                        results.append({
+                            "source": "katana",
+                            "type": "alert",
+                            "title": f"URL: {line[:100]}",
+                            "content": line,
+                            "url": line,
+                            "metadata": {"collected_by": "katana"}
+                        })
+            return results[:max_results]
+        except FileNotFoundError:
+            raise ValueError("katana not installed")
+
+    # ------------------------------------------------------------------
+    # Built-in executors — Leak Detection tools
+    # ------------------------------------------------------------------
+
+    def _exec_haveibeenpwned(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("HIBP_API_KEY")
+        if not api_key:
+            raise ValueError("HIBP_API_KEY not set")
+        headers = {"hibp-api-key": api_key, "User-Agent": "HYDRA-INTEL/1.0"}
+        resp = requests.get(
+            f"https://haveibeenpwned.com/api/v3/breachedaccount/{query}",
+            headers=headers, timeout=30, params={"truncateResponse": "false"},
+        )
+        if resp.status_code == 404:
+            return []
+        if resp.status_code != 200:
+            raise ValueError(f"HIBP API error: {resp.status_code}")
+        breaches = resp.json()
+        results = []
+        for breach in breaches[:max_results]:
+            results.append({
+                "source": "haveibeenpwned",
+                "type": "leak",
+                "title": f"Breach: {breach.get('Name', '')} — {query}",
+                "content": breach.get("Description", "")[:2000],
+                "url": f"https://haveibeenpwned.com/",
+                "metadata": {
+                    "breach_name": breach.get("Name"),
+                    "breach_date": breach.get("BreachDate"),
+                    "pwn_count": breach.get("PwnCount"),
+                    "data_classes": breach.get("DataClasses", []),
+                    "is_verified": breach.get("IsVerified"),
+                    "email": query,
+                }
+            })
+        return results
+
+    def _exec_dehashed(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        email = os.environ.get("DEHASHED_EMAIL")
+        api_key = os.environ.get("DEHASHED_API_KEY")
+        if not email or not api_key:
+            raise ValueError("DEHASHED_EMAIL and DEHASHED_API_KEY required")
+        resp = requests.get(
+            "https://api.dehashed.com/search",
+            params={"query": query, "size": max_results},
+            auth=(email, api_key),
+            headers={"Accept": "application/json"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"Dehashed API error: {resp.status_code}")
+        data = resp.json()
+        results = []
+        for entry in data.get("entries", [])[:max_results]:
+            results.append({
+                "source": "dehashed",
+                "type": "leak",
+                "title": f"Leak: {entry.get('email', entry.get('username', 'unknown'))} — {entry.get('database_name', '')}",
+                "content": f"Database: {entry.get('database_name')} | Email: {entry.get('email')} | Username: {entry.get('username')}",
+                "url": "https://dehashed.com",
+                "metadata": {
+                    "email": entry.get("email"),
+                    "username": entry.get("username"),
+                    "password": entry.get("password"),
+                    "hashed_password": entry.get("hashed_password"),
+                    "database_name": entry.get("database_name"),
+                    "ip_address": entry.get("ip_address"),
+                }
+            })
+        return results
+
+    def _exec_snusbase(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("SNUSBASE_API_KEY")
+        if not api_key:
+            raise ValueError("SNUSBASE_API_KEY not set")
+        # Determine search type
+        search_type = "email"
+        if "@" not in query:
+            search_type = "username"
+        resp = requests.post(
+            "https://api.snusbase.com/data/search",
+            json={"terms": [query], "types": [search_type]},
+            headers={"Auth": api_key, "Content-Type": "application/json"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"Snusbase API error: {resp.status_code}")
+        data = resp.json()
+        results = []
+        for db_name, entries in data.get("results", {}).items():
+            for entry in entries[:max_results]:
+                results.append({
+                    "source": "snusbase",
+                    "type": "leak",
+                    "title": f"Leak: {entry.get('email', query)} — {db_name}",
+                    "content": f"Database: {db_name} | Email: {entry.get('email', '')} | Username: {entry.get('username', '')}",
+                    "url": "https://snusbase.com",
+                    "metadata": {
+                        "email": entry.get("email"),
+                        "username": entry.get("username"),
+                        "hash": entry.get("hash"),
+                        "password": entry.get("password"),
+                        "database": db_name,
+                    }
+                })
+        return results[:max_results]
+
+    def _exec_leakcheck(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("LEAKCHECK_API_KEY")
+        if not api_key:
+            raise ValueError("LEAKCHECK_API_KEY not set")
+        # Determine type
+        check_type = "email" if "@" in query else "username"
+        resp = requests.get(
+            f"https://leakcheck.io/api/v2/query/{query}",
+            params={"type": check_type},
+            headers={"X-API-Key": api_key},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        results = []
+        for entry in data.get("result", [])[:max_results]:
+            sources = entry.get("sources", [])
+            results.append({
+                "source": "leakcheck",
+                "type": "leak",
+                "title": f"Leak found: {query} in {len(sources)} database(s)",
+                "content": f"Sources: {', '.join(s.get('name', '') for s in sources)}",
+                "url": "https://leakcheck.io",
+                "metadata": {
+                    "email": entry.get("email"),
+                    "username": entry.get("username"),
+                    "password": entry.get("password"),
+                    "sources": sources,
+                }
+            })
+        return results
+
+    def _exec_leaklookup(self, tool, query, max_results, **kw) -> List[dict]:
+        import os, requests
+        api_key = os.environ.get("LEAKLOOKUP_API_KEY")
+        if not api_key:
+            raise ValueError("LEAKLOOKUP_API_KEY not set")
+        search_type = "email_address" if "@" in query else "username"
+        resp = requests.get(
+            "https://leak-lookup.com/api/search",
+            params={"key": api_key, "type": search_type, "query": query},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        results = []
+        if data.get("error") == "false" and data.get("message"):
+            for db_name, entries in data["message"].items():
+                if isinstance(entries, list):
+                    for entry in entries[:max_results]:
+                        results.append({
+                            "source": "leaklookup",
+                            "type": "leak",
+                            "title": f"Leak: {query} — {db_name}",
+                            "content": str(entry)[:2000],
+                            "url": "https://leak-lookup.com",
+                            "metadata": {"database": db_name, "entry": entry}
+                        })
+        return results[:max_results]
 
     # ------------------------------------------------------------------
     # Status & reporting

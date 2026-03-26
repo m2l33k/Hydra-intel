@@ -6,6 +6,10 @@ from collectors.reddit_collector import RedditCollector
 from collectors.pastebin_collector import PastebinCollector
 from collectors.telegram_collector import TelegramCollector
 from collectors.whatsapp_collector import WhatsAppCollector
+from collectors.social_media_collector import SocialMediaCollector
+from collectors.dns_collector import DNSCollector, InfrastructureCollector
+from collectors.leak_collector import LeakCollector
+from collectors.dark_web_collector import DarkWebCollector
 
 __all__ = [
     "BaseCollector",
@@ -16,4 +20,9 @@ __all__ = [
     "PastebinCollector",
     "TelegramCollector",
     "WhatsAppCollector",
+    "SocialMediaCollector",
+    "DNSCollector",
+    "InfrastructureCollector",
+    "LeakCollector",
+    "DarkWebCollector",
 ]

@@ -1,28 +1,83 @@
 # HYDRA INTEL - Dependencies
 # Python 3.11+
 
-# HTTP & Parsing
+# ── Core ──
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 urllib3>=2.0.0
 
-# Backend API
+# ── Backend API ──
 fastapi>=0.110.0
-uvicorn>=0.29.0
+uvicorn[standard]>=0.29.0
 httpx>=0.27.0
+pydantic>=2.0.0
 
-# Scalable crawling (optional, for advanced use)
-# scrapy>=2.11.0
+# ── OSINT: GitHub ──
+# gitleaks, trufflehog → Go binaries (installed separately)
 
-# Dynamic content rendering (optional)
-# playwright>=1.40.0
+# ── OSINT: Reddit ──
+praw>=7.7.0
 
-# Future: PostgreSQL support
-# psycopg2-binary>=2.9.0
-# sqlalchemy>=2.0.0
+# ── OSINT: Telegram ──
+telethon>=1.34.0
 
-# Future: Async / Queue
-# celery>=5.3.0
-# aiohttp>=3.9.0
-# redis>=5.0.0
+# ── OSINT: Infrastructure ──
+shodan>=1.30.0
+censys>=2.2.0
+python-nmap>=0.7.1
+
+# ── OSINT: Vulnerability ──
+nvdlib>=0.7.0
+vulners>=2.1.0
+
+# ── OSINT: Threat Intel ──
+pymisp>=2.4.180
+pycti>=6.0.0
+OTXv2>=1.5.12
+vt-py>=0.18.0
+yara-python>=4.5.0
+
+# ── OSINT: Social / Email ──
+sherlock-project>=0.14.0
+maigret>=0.4.4
+holehe>=1.61
+h8mail>=2.5.6
+social-analyzer>=0.2.0
+snscrape>=0.7.0
+twint>=2.1.0  # Twitter scraping without API
+
+# ── OSINT: DNS ──
+dnstwist>=20240116
+# CLI tools (Go binaries, install separately):
+# assetfinder, subfinder, waybackurls, gau, katana, httpx, amass
+
+# ── OSINT: Infrastructure ──────────
+netlas>=0.4.0
+ipinfo>=5.0.0
+# securitytrails → REST API only, no pip package
+
+# ── OSINT: Telegram (additional) ──
+pyrogram>=2.0.0
+tgcrypto>=1.2.0
+
+# ── OSINT: Dark Web ──
+PySocks>=1.7.1
+onionsearch>=1.0.0
+
+# ── OSINT: Leak Detection ──
+# haveibeenpwned, dehashed, snusbase, leakcheck, leaklookup → REST APIs (keys required)
+
+# ── OSINT: WhatsApp ──
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+whatstk>=0.7.0
+
+# ── OSINT: Surface ──
+# spiderfoot, recon-ng, amass → installed separately
+# theHarvester>=4.0.0  # uncomment if needed
+
+# ── Utilities ──
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+aiofiles>=23.0.0
