@@ -1,0 +1,53 @@
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Runtime / local data ---
+logs/
+*.log
+intel.db
+*.sqlite
+*.sqlite3
+
+# --- Build / temp ---
+build/
+dist/
+*.tmp
+*.temp
+
+# --- Node / Next.js frontend ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/.turbo/
+frontend/.cache/
+frontend/*.tsbuildinfo

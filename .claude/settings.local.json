@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv venv)",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(pip install:*)",
+      "Bash(python -c \":*)",
+      "Bash(python main.py --source cve --max-results 10)",
+      "Bash(python main.py --source cve --max-results 15)",
+      "Bash(python main.py --source reddit --query \"vulnerability exploit\" --max-results 10)",
+      "Bash(python main.py --source reddit --query \"vulnerability\" --max-results 10)",
+      "Bash(python main.py --source cve --max-results 20)",
+      "Bash(find /c/Users/m2l3k/Desktop/hydra -maxdepth 2 -type f \\\\\\(-name *.json -o -name *.py -o -name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) ! -path */venv/* ! -path */.claude/*)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir --no-import-alias --use-npm)",
+      "Bash(npx --yes create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir --use-npm --no-turbopack 2)",
+      "Bash(1:*)",
+      "Bash(rm -rf frontend)",
+      "Bash(mkdir -p frontend)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(npx next:*)",
+      "Bash(node:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npx:*)",
+      "Bash(curl:*)",
+      "Bash(grep -E \"\\\\.py$|app|server\")",
+      "Bash(grep -r \"flask\\\\|fastapi\\\\|django\\\\|app\\\\.run\\\\|uvicorn\" /c/Users/m2l3k/Desktop/hydra --include=*.py)",
+      "Bash(source .venv/Scripts/activate)",
+      "Bash(timeout 10 python -c \":*)",
+      "Bash(grep -E \"\\\\.\\(md|txt|yml|yaml|json|toml|cfg\\)$\")"
+    ]
+  }
+}
