@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timezone
 
 from config import settings
-from collectors import GitHubCollector, CVECollector, RedditCollector, PastebinCollector
+from collectors import GitHubCollector, CVECollector, RedditCollector, PastebinCollector, TelegramCollector, WhatsAppCollector
 from core.http_client import HttpClient
 from core.logger import get_logger
 from pipelines.intel_pipeline import IntelPipeline, PipelineResult
@@ -51,6 +51,8 @@ def build_collectors(source: str | None, http_client: HttpClient) -> dict:
         "cve": lambda: CVECollector(http_client),
         "reddit": lambda: RedditCollector(http_client),
         "pastebin": lambda: PastebinCollector(http_client),
+        "telegram": lambda: TelegramCollector(http_client),
+        "whatsapp": lambda: WhatsAppCollector(http_client),
     }
 
     if source:
@@ -81,6 +83,8 @@ def build_tasks(collectors: dict, query: str, max_results: int) -> list:
         "cve": "",  # CVE collector fetches recent by default
         "reddit": "data breach OR vulnerability OR exploit",
         "pastebin": "password",
+        "telegram": "breach OR malware OR stealer",
+        "whatsapp": "security OR credentials",
     }
 
     tasks = []
@@ -149,7 +153,7 @@ def parse_args() -> argparse.Namespace:
         "-s", "--source",
         type=str,
         default=None,
-        choices=["github", "cve", "reddit", "pastebin"],
+        choices=["github", "cve", "reddit", "pastebin", "telegram", "whatsapp"],
         help="Run a specific collector only",
     )
     parser.add_argument(
@@ -237,3 +241,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

@@ -45,6 +45,8 @@ const sourceTypeColor: Record<string, string> = {
   vulnerability_intel: "#22c55e",
   reddit_intel: "#a855f7",
   paste_leaks: "#f59e0b",
+  telegram_intel: "#06b6d4",
+  whatsapp_intel: "#22c55e",
 };
 
 const toolStatusColor: Record<string, string> = {
@@ -657,6 +659,8 @@ export default function OsintSourcesPage() {
     </PageShell>
   );
 }
+
+
 
 
 

@@ -80,6 +80,8 @@ const TARGET_BY_SOURCE: Record<string, string> = {
   cve: "vulnerability_intel",
   reddit: "reddit_intel",
   pastebin: "paste_leaks",
+  telegram: "telegram_intel",
+  whatsapp: "whatsapp_intel",
 };
 
 function asStringArray(value: unknown): string[] {
@@ -183,3 +185,5 @@ export async function toggleCollector(source: string, enabled: boolean): Promise
   );
   return normalizeCollectorStatus(result);
 }
+
+

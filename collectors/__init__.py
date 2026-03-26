@@ -4,6 +4,8 @@ from collectors.github_collector import GitHubCollector
 from collectors.cve_collector import CVECollector
 from collectors.reddit_collector import RedditCollector
 from collectors.pastebin_collector import PastebinCollector
+from collectors.telegram_collector import TelegramCollector
+from collectors.whatsapp_collector import WhatsAppCollector
 
 __all__ = [
     "BaseCollector",
@@ -12,4 +14,6 @@ __all__ = [
     "CVECollector",
     "RedditCollector",
     "PastebinCollector",
+    "TelegramCollector",
+    "WhatsAppCollector",
 ]

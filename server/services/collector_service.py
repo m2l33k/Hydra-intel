@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Optional, Any
 
-from collectors import GitHubCollector, CVECollector, RedditCollector, PastebinCollector
+from collectors import GitHubCollector, CVECollector, RedditCollector, PastebinCollector, TelegramCollector, WhatsAppCollector
 from collectors.base import BaseCollector
 from core.http_client import HttpClient
 from core.normalizer import Normalizer
@@ -86,6 +86,8 @@ class CollectorService:
             "cve": CollectorState("CVE Feed (NVD/CIRCL)", "cve", TargetType.VULNERABILITY_INTEL.value),
             "reddit": CollectorState("Reddit Security Monitor", "reddit", TargetType.REDDIT_INTEL.value),
             "pastebin": CollectorState("Pastebin Scraper", "pastebin", TargetType.PASTE_LEAKS.value),
+            "telegram": CollectorState("Telegram Monitor", "telegram", TargetType.TELEGRAM_INTEL.value),
+            "whatsapp": CollectorState("WhatsApp Monitor", "whatsapp", TargetType.WHATSAPP_INTEL.value),
         }
 
     def _create_collector(self, source: str) -> Optional[BaseCollector]:
@@ -95,6 +97,8 @@ class CollectorService:
             "cve": lambda: CVECollector(self.http_client, tool_manager=self.tool_manager),
             "reddit": lambda: RedditCollector(self.http_client, tool_manager=self.tool_manager),
             "pastebin": lambda: PastebinCollector(self.http_client, tool_manager=self.tool_manager),
+            "telegram": lambda: TelegramCollector(self.http_client, tool_manager=self.tool_manager),
+            "whatsapp": lambda: WhatsAppCollector(self.http_client, tool_manager=self.tool_manager),
         }
         factory = collectors.get(source)
         if factory:
@@ -154,6 +158,8 @@ class CollectorService:
             "cve": "",
             "reddit": "data breach OR vulnerability",
             "pastebin": "password",
+            "telegram": "breach OR malware OR stealer",
+            "whatsapp": "security OR credentials",
         }
         query = query or default_queries.get(source, "")
 
@@ -323,3 +329,6 @@ class CollectorService:
                 listener(event)
             except Exception as e:
                 logger.error("Listener error: %s", e)
+
+
+
