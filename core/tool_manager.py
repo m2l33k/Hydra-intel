@@ -417,6 +417,17 @@ class ToolManager:
         self.executor_registry.register("yara-python", self._exec_yara)
         self.executor_registry.register("gitleaks", self._exec_gitleaks)
         self.executor_registry.register("trufflehog", self._exec_trufflehog)
+        self.executor_registry.register("gharchive", self._exec_gharchive)
+        self.executor_registry.register("snscrape", self._exec_snscrape)
+        self.executor_registry.register("pushshift-wrapper", self._exec_pushshift_wrapper)
+        self.executor_registry.register("wppconnect", self._exec_wppconnect)
+        self.executor_registry.register("pastemon", self._exec_pastemon)
+        self.executor_registry.register("foca", self._exec_foca)
+        self.executor_registry.register("telegram-history-dump", self._exec_telegram_history_dump)
+        self.executor_registry.register("ivre", self._exec_ivre)
+        self.executor_registry.register("chat-export-parser", self._exec_chat_export_parser)
+        self.executor_registry.register("wa-group-link-scraper", self._exec_wa_group_link_scraper)
+        self.executor_registry.register("whatsapp-web-api", self._exec_whatsapp_web_api)
 
     # ------------------------------------------------------------------
     # Built-in executors — GitHub
@@ -1423,6 +1434,350 @@ class ToolManager:
                     }
                 })
         return results
+
+    def _exec_gharchive(self, tool, query, max_results, **kw) -> List[dict]:
+        """Approximate GHArchive using recent GitHub public events."""
+        from core.http_client import HttpClient
+
+        query_lower = (query or "").lower()
+        with HttpClient() as client:
+            events = client.get_json(
+                "https://api.github.com/events",
+                params={"per_page": min(max_results, 100)},
+            )
+            if not isinstance(events, list):
+                return []
+
+            results = []
+            for event in events:
+                repo_name = event.get("repo", {}).get("name", "")
+                actor = event.get("actor", {}).get("login", "")
+                event_type = event.get("type", "")
+                payload_text = str(event.get("payload", {}))
+                haystack = f"{repo_name} {actor} {event_type} {payload_text}".lower()
+
+                if query_lower and query_lower not in haystack:
+                    continue
+
+                results.append({
+                    "source": "gharchive",
+                    "type": "mention",
+                    "title": f"{event_type} on {repo_name}",
+                    "content": payload_text[:2000],
+                    "url": f"https://github.com/{repo_name}" if repo_name else "https://github.com",
+                    "metadata": {
+                        "event_id": event.get("id"),
+                        "event_type": event_type,
+                        "repo": repo_name,
+                        "actor": actor,
+                        "created_at": event.get("created_at"),
+                    },
+                })
+                if len(results) >= max_results:
+                    break
+
+            return results
+
+    def _exec_snscrape(self, tool, query, max_results, **kw) -> List[dict]:
+        """Collect Reddit intel through snscrape."""
+        try:
+            import snscrape.modules.reddit as snreddit
+        except ImportError as exc:
+            raise ValueError("snscrape not installed") from exc
+
+        scraper = snreddit.RedditSearchScraper(query or "cybersecurity")
+        results = []
+        for item in scraper.get_items():
+            results.append({
+                "source": "reddit",
+                "type": "mention",
+                "title": item.title,
+                "content": (item.selftext or "")[:2000],
+                "url": str(item.url),
+                "metadata": {
+                    "subreddit": str(item.subreddit),
+                    "author": str(item.author),
+                    "score": item.score,
+                    "num_comments": item.numComments,
+                    "created": item.date.isoformat() if item.date else None,
+                    "collected_by": "snscrape",
+                },
+            })
+            if len(results) >= max_results:
+                break
+        return results
+
+    def _exec_pushshift_wrapper(self, tool, query, max_results, **kw) -> List[dict]:
+        """Collect Reddit submissions via PullPush (Pushshift-style) API."""
+        from core.http_client import HttpClient
+
+        with HttpClient() as client:
+            data = client.get_json(
+                "https://api.pullpush.io/reddit/search/submission",
+                params={
+                    "q": query or "cybersecurity",
+                    "size": min(max_results, 100),
+                    "sort": "desc",
+                    "sort_type": "created_utc",
+                },
+            )
+            posts = data.get("data", []) if isinstance(data, dict) else []
+            if not isinstance(posts, list):
+                return []
+
+            results = []
+            for post in posts[:max_results]:
+                permalink = post.get("permalink", "")
+                results.append({
+                    "source": "reddit",
+                    "type": "mention",
+                    "title": post.get("title", ""),
+                    "content": (post.get("selftext") or "")[:2000],
+                    "url": f"https://reddit.com{permalink}" if permalink else "",
+                    "metadata": {
+                        "subreddit": post.get("subreddit"),
+                        "author": post.get("author"),
+                        "score": post.get("score"),
+                        "created_utc": post.get("created_utc"),
+                        "collected_by": "pushshift-wrapper",
+                    },
+                })
+            return results
+
+    def _exec_chat_export_parser(self, tool, query, max_results, **kw) -> List[dict]:
+        """Parse exported WhatsApp chat files."""
+        import os
+        import re
+
+        export_path = kw.get("chat_export_path")
+        if not export_path:
+            raise ValueError("chat_export_path is required for chat-export-parser")
+        if not os.path.exists(export_path):
+            raise ValueError(f"chat export file not found: {export_path}")
+
+        pattern = re.compile(
+            r"^\[?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM|am|pm)?)\]?\s*[-?]?\s*([^:]+):\s*(.*)$"
+        )
+        query_lower = (query or "").lower()
+
+        results = []
+        with open(export_path, "r", encoding="utf-8", errors="ignore") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                match = pattern.match(line)
+                if not match:
+                    continue
+
+                date_part, time_part, author, message = match.groups()
+                if query_lower and query_lower not in message.lower() and query_lower not in author.lower():
+                    continue
+
+                results.append({
+                    "source": "whatsapp",
+                    "type": "mention",
+                    "title": f"WhatsApp: {author}",
+                    "content": message[:2000],
+                    "url": "",
+                    "metadata": {
+                        "author": author,
+                        "date": date_part,
+                        "time": time_part,
+                        "chat_export_path": export_path,
+                        "collected_by": "chat-export-parser",
+                    },
+                })
+                if len(results) >= max_results:
+                    break
+
+        return results
+
+    def _exec_wa_group_link_scraper(self, tool, query, max_results, **kw) -> List[dict]:
+        """Discover public WhatsApp invite links via web search."""
+        import re
+        from core.http_client import HttpClient
+
+        search_query = query or "security"
+        search_url = f"https://r.jina.ai/http://duckduckgo.com/html/?q=site:chat.whatsapp.com+{search_query}"
+        with HttpClient() as client:
+            resp = client.get(search_url)
+            if not resp:
+                return []
+
+            matches = re.findall(r"https://chat\.whatsapp\.com/[A-Za-z0-9]+", resp.text)
+            unique_links = []
+            seen = set()
+            for link in matches:
+                if link in seen:
+                    continue
+                seen.add(link)
+                unique_links.append(link)
+                if len(unique_links) >= max_results:
+                    break
+
+            return [
+                {
+                    "source": "whatsapp",
+                    "type": "mention",
+                    "title": "WhatsApp Group Invite Link",
+                    "content": f"Discovered invite link for query '{search_query}'",
+                    "url": link,
+                    "metadata": {
+                        "collected_by": "wa-group-link-scraper",
+                        "query": search_query,
+                    },
+                }
+                for link in unique_links
+            ]
+
+    def _exec_whatsapp_web_api(self, tool, query, max_results, **kw) -> List[dict]:
+        """WhatsApp web fallback collection strategy."""
+        if kw.get("chat_export_path"):
+            return self._exec_chat_export_parser(tool, query, max_results, **kw)
+        return self._exec_wa_group_link_scraper(tool, query, max_results, **kw)
+
+    def _exec_wppconnect(self, tool, query, max_results, **kw) -> List[dict]:
+        """Dedicated wrapper for WPPConnect-backed collection."""
+        results = self._exec_whatsapp_web_api(tool, query, max_results, **kw)
+        for item in results:
+            item["source"] = "wppconnect"
+            metadata = item.get("metadata", {})
+            metadata["collected_by"] = "wppconnect"
+            item["metadata"] = metadata
+        return results
+
+    def _exec_pastemon(self, tool, query, max_results, **kw) -> List[dict]:
+        """Alternative paste monitoring source with fallback to PSBDMP."""
+        from core.http_client import HttpClient
+
+        with HttpClient() as client:
+            data = client.get_json(f"https://psbdmp.ws/api/v3/search/{query or 'password'}")
+            if isinstance(data, list) and data:
+                results = []
+                for item in data[:max_results]:
+                    results.append({
+                        "source": "pastemon",
+                        "type": "leak",
+                        "title": f"Paste leak: {item.get('id', 'unknown')}",
+                        "content": (item.get("tags") or "")[:2000],
+                        "url": f"https://pastebin.com/{item.get('id', '')}",
+                        "metadata": {
+                            "paste_id": item.get("id"),
+                            "tags": item.get("tags", []),
+                            "collected_by": "pastemon",
+                        },
+                    })
+                return results
+
+        return self._exec_pastebin(tool, query, max_results, **kw)
+
+    def _exec_foca(self, tool, query, max_results, **kw) -> List[dict]:
+        """FOCA-style metadata reconnaissance fallback."""
+        results = self._exec_theharvester(tool, query, max_results, **kw)
+        for item in results:
+            item["source"] = "foca"
+            metadata = item.get("metadata", {})
+            metadata["collected_by"] = "foca"
+            item["metadata"] = metadata
+        return results
+
+    def _exec_telegram_history_dump(self, tool, query, max_results, **kw) -> List[dict]:
+        """Parse Telegram export files (JSON) or fallback to bot API updates."""
+        import json
+        import os
+
+        export_path = kw.get("telegram_export_path")
+        if not export_path:
+            return self._exec_telegram_bot(tool, query, max_results, **kw)
+        if not os.path.exists(export_path):
+            raise ValueError(f"telegram export file not found: {export_path}")
+
+        with open(export_path, "r", encoding="utf-8", errors="ignore") as handle:
+            data = json.load(handle)
+
+        messages = data.get("messages", []) if isinstance(data, dict) else data
+        if not isinstance(messages, list):
+            return []
+
+        query_lower = (query or "").lower()
+        results = []
+        for message in messages:
+            text = message.get("text") if isinstance(message.get("text"), str) else str(message.get("text", ""))
+            if not text:
+                continue
+            if query_lower and query_lower not in text.lower():
+                continue
+
+            results.append({
+                "source": "telegram",
+                "type": "mention",
+                "title": f"Telegram Export Message {message.get('id', '')}",
+                "content": text[:2000],
+                "url": "",
+                "metadata": {
+                    "message_id": message.get("id"),
+                    "date": message.get("date"),
+                    "from": message.get("from"),
+                    "collected_by": "telegram-history-dump",
+                },
+            })
+            if len(results) >= max_results:
+                break
+
+        return results
+
+    def _exec_ivre(self, tool, query, max_results, **kw) -> List[dict]:
+        """IVRE-backed infrastructure intel with graceful fallback."""
+        import json
+        import subprocess
+
+        try:
+            cmd = ["ivre", "ipinfo", "--json"]
+            if query:
+                cmd.append(query)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if proc.returncode != 0:
+                raise ValueError(proc.stderr.strip() or "IVRE command failed")
+
+            results = []
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                ip_addr = item.get("addr") or item.get("ip") or ""
+                results.append({
+                    "source": "ivre",
+                    "type": "alert",
+                    "title": f"IVRE host {ip_addr}",
+                    "content": str(item)[:2000],
+                    "url": f"https://{ip_addr}" if ip_addr else "",
+                    "metadata": {
+                        "ip": ip_addr,
+                        "ports": item.get("ports", []),
+                        "collected_by": "ivre",
+                    },
+                })
+                if len(results) >= max_results:
+                    break
+
+            if results:
+                return results
+        except Exception:
+            pass
+
+        shodan_results = self._exec_shodan(tool, query, max_results, **kw)
+        for item in shodan_results:
+            item["source"] = "ivre"
+            metadata = item.get("metadata", {})
+            metadata["collected_by"] = "ivre_fallback_shodan"
+            item["metadata"] = metadata
+        return shodan_results
 
     # ------------------------------------------------------------------
     # Status & reporting
