@@ -13,8 +13,12 @@ export interface ToolDefinition {
   total_runs: number;
   consecutive_errors: number;
   last_error: string | null;
+  python_package?: string | null;
+  cli_command?: string | null;
+  install_commands?: string[];
   requires_auth: boolean;
   auth_env_vars: string[];
+  auth_description?: string;
   capabilities: string[];
   rate_limit: number | null;
 }

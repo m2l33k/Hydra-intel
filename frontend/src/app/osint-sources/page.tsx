@@ -100,6 +100,39 @@ function getTraceFromCollectorStatus(collector: CollectorStatus): CollectorRunRe
   };
 }
 
+function buildChecklistForSource(tools: ToolDefinition[]) {
+  const installSteps = new Set<string>();
+  const envRequirements: Array<{ tool: string; envVar: string; authDescription?: string }> = [];
+
+  for (const tool of tools) {
+    const commands = (tool.install_commands || []).filter((cmd) => Boolean(cmd && cmd.trim()));
+    if (commands.length > 0) {
+      for (const command of commands) {
+        installSteps.add(`${tool.name}: ${command}`);
+      }
+    } else if (tool.python_package) {
+      installSteps.add(`${tool.name}: pip install ${tool.python_package}`);
+    } else if (tool.cli_command) {
+      installSteps.add(`${tool.name}: install ${tool.cli_command} and add to PATH`);
+    }
+
+    if (tool.requires_auth || (tool.auth_env_vars || []).length > 0) {
+      const envVars = (tool.auth_env_vars || []).filter((envVar) => Boolean(envVar && envVar.trim()));
+      for (const envVar of envVars) {
+        envRequirements.push({
+          tool: tool.name,
+          envVar,
+          authDescription: tool.auth_description || undefined,
+        });
+      }
+    }
+  }
+
+  return {
+    installSteps: Array.from(installSteps),
+    envRequirements,
+  };
+}
 export default function OsintSourcesPage() {
   const [collectors, setCollectors] = useState<CollectorStatus[]>([]);
   const [toolManagerStatus, setToolManagerStatus] = useState<ToolManagerStatus | null>(null);
@@ -419,6 +452,7 @@ export default function OsintSourcesPage() {
           const trace = runResultsBySource[collector.source] || getTraceFromCollectorStatus(collector);
           const sourceBusy = Boolean(busySources[collector.source]);
           const toolsLoading = Boolean(loadingToolsBySource[collector.source]);
+          const checklist = buildChecklistForSource(tools);
 
           return (
             <motion.div
@@ -560,6 +594,38 @@ export default function OsintSourcesPage() {
                 )}
               </div>
 
+              {(checklist.installSteps.length > 0 || checklist.envRequirements.length > 0) && (
+                <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 mb-3">
+                  <p className="text-[10px] text-text-tertiary uppercase tracking-wide mb-2">Install / Configure Checklist</p>
+
+                  {checklist.installSteps.length > 0 && (
+                    <div className="mb-2.5">
+                      <p className="text-[10px] text-text-secondary mb-1">Install packages / tools</p>
+                      <div className="space-y-1">
+                        {checklist.installSteps.slice(0, 6).map((step, idx) => (
+                          <p key={`${collector.source}-install-${idx}`} className="text-[10px] text-amber-glow break-words">
+                            - {step}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {checklist.envRequirements.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-text-secondary mb-1">Configure environment variables</p>
+                      <div className="space-y-1">
+                        {checklist.envRequirements.slice(0, 8).map((entry, idx) => (
+                          <p key={`${collector.source}-env-${entry.tool}-${entry.envVar}-${idx}`} className="text-[10px] text-cyan-glow break-words">
+                            - {entry.envVar} ({entry.tool}){entry.authDescription ? ` - ${entry.authDescription}` : ""}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between pt-3 border-t border-white/[0.04]">
                 <div className="flex items-center gap-3 text-[9px] text-text-tertiary">
                   <span>
@@ -659,10 +725,5 @@ export default function OsintSourcesPage() {
     </PageShell>
   );
 }
-
-
-
-
-
 
 

@@ -156,8 +156,12 @@ class ToolDefinition:
             "total_runs": self.total_runs,
             "consecutive_errors": self.consecutive_errors,
             "last_error": self.last_error,
+            "python_package": self.python_package,
+            "cli_command": self.cli_command,
+            "install_commands": self.install_commands,
             "requires_auth": self.requires_auth,
             "auth_env_vars": self.auth_env_vars,
+            "auth_description": self.auth_description,
             "capabilities": self.capabilities,
             "rate_limit": self.rate_limit,
         }
