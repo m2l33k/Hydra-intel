@@ -1,18 +1,10 @@
 import unittest
 
-try:
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from server.dependencies import get_collector_service
-    from server.routes.collectors import router
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-    FASTAPI_AVAILABLE = True
-except ModuleNotFoundError:
-    FASTAPI_AVAILABLE = False
-    FastAPI = None
-    TestClient = None
-    get_collector_service = None
-    router = None
+from server.dependencies import get_collector_service
+from server.routes.collectors import router
 
 
 class FakeCollectorService:
@@ -125,16 +117,13 @@ class FakeCollectorService:
         return self.next_toggle_result
 
 
-def make_client(service: FakeCollectorService):
-    if not FASTAPI_AVAILABLE:
-        raise RuntimeError("FastAPI is not installed")
+def make_client(service: FakeCollectorService) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_collector_service] = lambda: service
     return TestClient(app)
 
 
-@unittest.skipUnless(FASTAPI_AVAILABLE, "FastAPI not installed")
 class CollectorRouteContractTests(unittest.TestCase):
     def setUp(self):
         self.service = FakeCollectorService()
