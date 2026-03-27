@@ -31,7 +31,10 @@
       "Bash(ls:*)",
       "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|BROKEN\\\\|XXX\\\\|HACK\" /c/Users/m2l3k/Desktop/hydra --include=*.py)",
       "Bash(python -c \"from core.tool_registry import ToolRegistry; r = ToolRegistry\\(\\); print\\(f''''Total tools: {len\\(r.get_all_tools\\(\\)\\)}''''\\); [print\\(f''''  {t.value}: {len\\(r.get_tools_for_target\\(t\\)\\)} tools''''\\) for t in r.get_target_types.__func__.__code__.co_varnames[:1] or []] or None\")",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(grep -v '^$')",
+      "Bash(/tmp/final_report.txt:*)"
     ]
   }
 }

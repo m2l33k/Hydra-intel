@@ -1,11 +1,13 @@
 #!/bin/bash
-set -e
+# ═══════════════════════════════════════════════════════════════
+# HYDRA INTEL — Entrypoint
+# ═══════════════════════════════════════════════════════════════
 
 echo "══════════════════════════════════════════════"
 echo "  HYDRA INTEL — Starting Platform"
 echo "══════════════════════════════════════════════"
 
-# Start Tor in background (if enabled)
+# Start Tor in background
 if [ "${TOR_ENABLED:-true}" = "true" ]; then
     echo "[*] Starting Tor SOCKS proxy on :9050..."
     tor -f /etc/tor/torrc &
@@ -13,16 +15,15 @@ if [ "${TOR_ENABLED:-true}" = "true" ]; then
     echo "[+] Tor started"
 fi
 
-# Initialize database
+# Initialize database (constructor does setup automatically)
 echo "[*] Initializing database..."
 python -c "
 from storage.database import IntelDatabase
 db = IntelDatabase()
-db._initialize()
-print('[+] Database ready at ${HYDRA_DB_PATH:-/app/data/intel.db}')
-"
+print('[+] Database ready')
+" 2>&1 || echo "[!] Database init failed (non-fatal)"
 
-# Run tool availability check
+# Check tool availability
 echo "[*] Checking tool availability..."
 python -c "
 from core.tool_manager import ToolManager
@@ -31,13 +32,13 @@ results = tm.initialize()
 available = sum(1 for s in results.values() if s == 'available')
 total = len(results)
 print(f'[+] Tools: {available}/{total} available')
-"
+" 2>&1 || echo "[!] Tool check failed (non-fatal)"
 
 # Start backend API
 echo "[*] Starting backend API on :8000..."
 python run_server.py &
 BACKEND_PID=$!
-sleep 2
+sleep 3
 
 # Start frontend
 if [ -d "/app/frontend/.next" ]; then
@@ -46,6 +47,8 @@ if [ -d "/app/frontend/.next" ]; then
     npx next start -p 3000 &
     FRONTEND_PID=$!
     cd /app
+else
+    echo "[!] Frontend not built, skipping"
 fi
 
 echo ""
@@ -57,8 +60,12 @@ echo "  API Docs: http://localhost:8000/docs"
 echo "══════════════════════════════════════════════"
 echo ""
 
-# Wait for any process to exit
-wait -n $BACKEND_PID ${FRONTEND_PID:-}
-
-# Exit with the status of the first process that exits
-exit $?
+# Keep container alive — wait for backend, restart if it dies
+while true; do
+    if ! kill -0 $BACKEND_PID 2>/dev/null; then
+        echo "[!] Backend died, restarting..."
+        python run_server.py &
+        BACKEND_PID=$!
+    fi
+    sleep 10
+done
