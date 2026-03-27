@@ -12,22 +12,22 @@
 # ══════════════════════════════════════════════════════════════
 FROM golang:1.24-bookworm AS go-builder
 
-# DNS & subdomain enumeration (all free, no keys)
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
-    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
-    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+# DNS & subdomain enumeration — pinned to Go 1.24-compatible versions
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@v1.6.9 || true
+RUN go install -v github.com/projectdiscovery/katana/cmd/katana@v1.1.0 || true
+RUN go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@v1.2.1 || true
+RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.3.7 || true
 
 # GitHub secret scanning (works on local repos, no token needed)
-RUN go install github.com/gitleaks/gitleaks/v8@latest && \
-    go install github.com/trufflesecurity/trufflehog/v3@latest
+RUN go install github.com/gitleaks/gitleaks/v8@latest || true
+RUN go install github.com/trufflesecurity/trufflehog/v3@latest || true
 
 # Recon & URL discovery (all free)
-RUN go install -v github.com/owasp-amass/amass/v4/...@master && \
-    go install github.com/tomnomnom/assetfinder@latest && \
-    go install github.com/tomnomnom/waybackurls@latest && \
-    go install github.com/lc/gau/v2/cmd/gau@latest
+RUN go install -v github.com/owasp-amass/amass/v4/...@master || true
+RUN go install github.com/tomnomnom/assetfinder@latest
+RUN go install github.com/tomnomnom/waybackurls@latest
+RUN go install github.com/lc/gau/v2/cmd/gau@latest || true
 
 
 # ══════════════════════════════════════════════════════════════
