@@ -81,25 +81,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Go binaries from Stage 1 ─────────────────────────────────
-COPY --from=go-builder /go/bin/subfinder    /usr/local/bin/subfinder
-COPY --from=go-builder /go/bin/httpx        /usr/local/bin/httpx
-COPY --from=go-builder /go/bin/katana       /usr/local/bin/katana
-COPY --from=go-builder /go/bin/dnsx         /usr/local/bin/dnsx
-COPY --from=go-builder /go/bin/nuclei       /usr/local/bin/nuclei
-COPY --from=go-builder /go/bin/gitleaks     /usr/local/bin/gitleaks
-COPY --from=go-builder /go/bin/trufflehog   /usr/local/bin/trufflehog
-COPY --from=go-builder /go/bin/amass        /usr/local/bin/amass
-COPY --from=go-builder /go/bin/assetfinder  /usr/local/bin/assetfinder
-COPY --from=go-builder /go/bin/waybackurls  /usr/local/bin/waybackurls
-COPY --from=go-builder /go/bin/gau          /usr/local/bin/gau
+# ── Go binaries from Stage 1 (copy whatever built successfully) ──
+COPY --from=go-builder /go/bin/ /tmp/gobin/
+RUN cp /tmp/gobin/* /usr/local/bin/ 2>/dev/null || true && rm -rf /tmp/gobin
 
 WORKDIR /app
 
 # ── Python core deps ─────────────────────────────────────────
-COPY requirements.txt .
+COPY requirements.docker.txt ./
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.docker.txt
 
 # ── Free OSINT Python tools (no API key needed) ──────────────
 
