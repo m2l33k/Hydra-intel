@@ -11,7 +11,12 @@ import {
   YAxis,
 } from "recharts";
 import { ShieldAlert, TrendingUp, Eye, AlertTriangle, type LucideProps } from "lucide-react";
-import { trendData24h } from "@/lib/mock-data";
+import {
+  fetchDashboardStats,
+  fetchTrend,
+  type DashboardStats,
+  type TrendPoint,
+} from "@/lib/threats-api";
 
 function RiskGauge({ score }: { score: number }) {
   const radius = 52;
@@ -30,7 +35,6 @@ function RiskGauge({ score }: { score: number }) {
   return (
     <div className="relative flex items-center justify-center w-32 h-20">
       <svg width="130" height="80" viewBox="0 0 130 80" className="overflow-visible">
-        {/* Track */}
         <path
           d="M 10 75 A 55 55 0 0 1 120 75"
           fill="none"
@@ -38,7 +42,6 @@ function RiskGauge({ score }: { score: number }) {
           strokeWidth="8"
           strokeLinecap="round"
         />
-        {/* Value */}
         <motion.path
           d="M 10 75 A 55 55 0 0 1 120 75"
           fill="none"
@@ -49,9 +52,7 @@ function RiskGauge({ score }: { score: number }) {
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 2, ease: "easeOut", delay: 0.5 }}
-          style={{
-            filter: `drop-shadow(0 0 6px ${color}80)`,
-          }}
+          style={{ filter: `drop-shadow(0 0 6px ${color}80)` }}
         />
       </svg>
       <div className="absolute bottom-0 text-center">
@@ -120,7 +121,37 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 
 export default function ThreatOverview() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [hours, setHours] = useState(24);
+
+  useEffect(() => {
+    setMounted(true);
+    fetchDashboardStats().then(setStats).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchTrend(hours).then(setTrend).catch(() => {});
+  }, [hours]);
+
+  const totalThreats = stats?.total_records ?? 0;
+  const criticalCount = stats?.critical_count ?? 0;
+  const leakCount = stats?.by_type?.leak ?? 0;
+  const recentCount = stats?.recent_count_24h ?? 0;
+
+  // Risk score: scale based on recent + critical
+  const riskScore = Math.min(100, Math.round(
+    (criticalCount * 5) + (recentCount * 0.5) + (leakCount * 2)
+  ));
+
+  // Format trend data for chart
+  const chartData = trend.map((t) => {
+    const d = new Date(t.timestamp);
+    return {
+      hour: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      threats: t.count,
+    };
+  });
 
   return (
     <motion.div
@@ -134,69 +165,64 @@ export default function ThreatOverview() {
           Threat Overview
         </h2>
         <div className="flex gap-1">
-          <button className="px-2.5 py-1 text-[10px] bg-cyan-glow/10 text-cyan-glow rounded border border-cyan-glow/20">
-            24h
-          </button>
-          <button className="px-2.5 py-1 text-[10px] text-text-tertiary rounded hover:bg-white/[0.03] border border-transparent">
-            7d
-          </button>
-          <button className="px-2.5 py-1 text-[10px] text-text-tertiary rounded hover:bg-white/[0.03] border border-transparent">
-            30d
-          </button>
+          {[{ label: "24h", value: 24 }, { label: "7d", value: 168 }, { label: "30d", value: 720 }].map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => setHours(opt.value)}
+              className={`px-2.5 py-1 text-[10px] rounded border transition-all ${
+                hours === opt.value
+                  ? "bg-cyan-glow/10 text-cyan-glow border-cyan-glow/20"
+                  : "text-text-tertiary border-transparent hover:bg-white/[0.03]"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex items-start gap-6 mb-5">
-        <RiskGauge score={78} />
+        <RiskGauge score={riskScore} />
         <div className="flex flex-wrap gap-5 flex-1">
           <StatBox
             icon={ShieldAlert}
             label="Total Threats"
-            value="1,847"
-            trend="+12.4%"
+            value={totalThreats.toLocaleString()}
+            trend={recentCount > 0 ? `+${recentCount} 24h` : "—"}
             color="#ff3b5c"
           />
           <StatBox
             icon={AlertTriangle}
             label="Critical Alerts"
-            value="23"
-            trend="+3"
+            value={String(criticalCount)}
+            trend=""
             color="#f97316"
           />
           <StatBox
             icon={Eye}
-            label="IOCs Tracked"
-            value="4,291"
-            trend="+187"
+            label="Vulns Tracked"
+            value={String(stats?.by_type?.vuln ?? 0)}
+            trend=""
             color="#00f0ff"
           />
           <StatBox
             icon={TrendingUp}
             label="Leaks Detected"
-            value="156"
-            trend="+8"
+            value={String(leakCount)}
+            trend=""
             color="#a855f7"
           />
         </div>
       </div>
 
-      {/* Trend Chart */}
       <div className="h-36">
-        {mounted && (
+        {mounted && chartData.length > 0 && (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trendData24h}>
+            <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="gradThreats" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#ff3b5c" stopOpacity={0.3} />
                   <stop offset="100%" stopColor="#ff3b5c" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradLeaks" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#a855f7" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#a855f7" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradVulns" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00f0ff" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#00f0ff" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -216,26 +242,13 @@ export default function ThreatOverview() {
                 fill="url(#gradThreats)"
                 dot={false}
               />
-              <Area
-                type="monotone"
-                dataKey="leaks"
-                name="Leaks"
-                stroke="#a855f7"
-                strokeWidth={1}
-                fill="url(#gradLeaks)"
-                dot={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="vulns"
-                name="Vulns"
-                stroke="#00f0ff"
-                strokeWidth={1}
-                fill="url(#gradVulns)"
-                dot={false}
-              />
             </AreaChart>
           </ResponsiveContainer>
+        )}
+        {mounted && chartData.length === 0 && (
+          <div className="h-full flex items-center justify-center text-[10px] text-text-tertiary">
+            No trend data — run collectors to populate
+          </div>
         )}
       </div>
     </motion.div>

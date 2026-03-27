@@ -1,0 +1,35 @@
+services:
+  hydra:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hydra-intel
+    ports:
+      - "8000:8000"
+      - "3000:3000"
+    volumes:
+      - hydra-data:/app/data
+      - hydra-logs:/app/logs
+      - hydra-yara:/app/yara-rules
+    environment:
+      - HYDRA_DB_TYPE=sqlite
+      - HYDRA_DB_PATH=/app/data/intel.db
+      - HYDRA_LOG_LEVEL=INFO
+      - HYDRA_RATE_LIMIT=1.0
+      - HYDRA_MAX_RESULTS=50
+      - TOR_ENABLED=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  hydra-data:
+    driver: local
+  hydra-logs:
+    driver: local
+  hydra-yara:
+    driver: local

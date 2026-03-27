@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Rss,
   Search,
-  Filter,
   Download,
   GitBranch,
   ShieldAlert,
@@ -18,10 +17,11 @@ import {
   ExternalLink,
   Clock,
   ArrowUpDown,
+  Loader,
   type LucideProps,
 } from "lucide-react";
 import PageShell, { StatCard, FilterButton } from "@/components/PageShell";
-import { threats, type ThreatItem, type Severity } from "@/lib/mock-data";
+import { fetchThreats, type ThreatItem, type Severity } from "@/lib/threats-api";
 
 const sourceIcons: Record<string, React.ComponentType<LucideProps>> = {
   github: GitBranch, "shield-alert": ShieldAlert, globe: Globe,
@@ -70,7 +70,7 @@ function ThreatDetailModal({ threat, onClose }: { threat: ThreatItem; onClose: (
         <div className="space-y-4">
           <div>
             <h4 className="text-[10px] font-semibold tracking-wider text-text-tertiary uppercase mb-1 font-[family-name:var(--font-display)]">Description</h4>
-            <p className="text-xs text-text-secondary leading-relaxed">{threat.description}</p>
+            <p className="text-xs text-text-secondary leading-relaxed">{threat.description || "No description available."}</p>
           </div>
 
           {threat.ioc && (
@@ -97,8 +97,25 @@ function ThreatDetailModal({ threat, onClose }: { threat: ThreatItem; onClose: (
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-white/[0.06]">
-          <button className="px-4 py-2 text-[11px] text-text-secondary border border-white/10 rounded-lg hover:bg-white/[0.03]">Export IOCs</button>
-          <button className="px-4 py-2 text-[11px] text-cyan-glow bg-cyan-glow/10 border border-cyan-glow/20 rounded-lg hover:bg-cyan-glow/15">Investigate</button>
+          <button
+            onClick={() => {
+              const text = [threat.title, threat.ioc, threat.url].filter(Boolean).join("\n");
+              navigator.clipboard.writeText(text);
+            }}
+            className="px-4 py-2 text-[11px] text-text-secondary border border-white/10 rounded-lg hover:bg-white/[0.03]"
+          >
+            Export IOCs
+          </button>
+          {threat.url && (
+            <a
+              href={threat.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 text-[11px] text-cyan-glow bg-cyan-glow/10 border border-cyan-glow/20 rounded-lg hover:bg-cyan-glow/15"
+            >
+              Investigate
+            </a>
+          )}
         </div>
       </motion.div>
     </motion.div>
@@ -106,10 +123,19 @@ function ThreatDetailModal({ threat, onClose }: { threat: ThreatItem; onClose: (
 }
 
 export default function ThreatFeedPage() {
+  const [threats, setThreats] = useState<ThreatItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Severity | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "severity">("time");
   const [selected, setSelected] = useState<ThreatItem | null>(null);
+
+  useEffect(() => {
+    fetchThreats({ per_page: 100 })
+      .then((data) => setThreats(data.items))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = threats
     .filter((t) => filter === "all" || t.severity === filter)
@@ -142,10 +168,10 @@ export default function ThreatFeedPage() {
     >
       {/* Stats Row */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label="Critical" value={counts.critical} change="+3 today" changeType="up" color="#ff3b5c" />
-        <StatCard label="High" value={counts.high} change="+5 today" changeType="up" color="#f97316" />
-        <StatCard label="Medium" value={counts.medium} change="+8 today" changeType="up" color="#f59e0b" />
-        <StatCard label="Low" value={counts.low} change="+2 today" changeType="neutral" color="#22c55e" />
+        <StatCard label="Critical" value={counts.critical} color="#ff3b5c" />
+        <StatCard label="High" value={counts.high} color="#f97316" />
+        <StatCard label="Medium" value={counts.medium} color="#f59e0b" />
+        <StatCard label="Low" value={counts.low} color="#22c55e" />
       </div>
 
       {/* Filters Bar */}
@@ -190,66 +216,77 @@ export default function ThreatFeedPage() {
 
       {/* Threat Table */}
       <div className="glass-card overflow-hidden">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-text-tertiary text-[10px] uppercase tracking-wider border-b border-white/[0.06] font-[family-name:var(--font-display)]">
-              <th className="px-4 py-3 text-left font-medium">Severity</th>
-              <th className="px-4 py-3 text-left font-medium">Threat</th>
-              <th className="px-4 py-3 text-left font-medium">Source</th>
-              <th className="px-4 py-3 text-left font-medium">Type</th>
-              <th className="px-4 py-3 text-left font-medium">
-                <Clock className="w-3 h-3 inline mr-1" />Time
-              </th>
-              <th className="px-4 py-3 text-right font-medium">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <AnimatePresence mode="popLayout">
-              {filtered.map((threat, i) => {
-                const sev = severityConfig[threat.severity];
-                const Icon = sourceIcons[threat.sourceIcon] || ShieldAlert;
-                return (
-                  <motion.tr
-                    key={threat.id}
-                    layout
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: i * 0.02 }}
-                    onClick={() => setSelected(threat)}
-                    className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer group"
-                  >
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-wider ${sev.class}`}>
-                        {sev.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 max-w-md">
-                      <p className="text-text-primary truncate group-hover:text-cyan-glow/80 transition-colors">
-                        {threat.title}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <Icon className="w-3 h-3 text-text-tertiary" strokeWidth={1.5} />
-                        <span className="text-text-secondary">{threat.source}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-text-tertiary capitalize px-1.5 py-0.5 rounded bg-white/[0.03]">{threat.type}</span>
-                    </td>
-                    <td className="px-4 py-3 text-text-tertiary">{threat.timestamp}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-cyan-glow/10 text-cyan-glow transition-all">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </AnimatePresence>
-          </tbody>
-        </table>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader className="w-5 h-5 text-cyan-glow animate-spin" />
+            <span className="ml-2 text-xs text-text-tertiary">Loading threats...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-xs text-text-tertiary">
+            No threats found. Run collectors to populate data.
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-text-tertiary text-[10px] uppercase tracking-wider border-b border-white/[0.06] font-[family-name:var(--font-display)]">
+                <th className="px-4 py-3 text-left font-medium">Severity</th>
+                <th className="px-4 py-3 text-left font-medium">Threat</th>
+                <th className="px-4 py-3 text-left font-medium">Source</th>
+                <th className="px-4 py-3 text-left font-medium">Type</th>
+                <th className="px-4 py-3 text-left font-medium">
+                  <Clock className="w-3 h-3 inline mr-1" />Time
+                </th>
+                <th className="px-4 py-3 text-right font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <AnimatePresence mode="popLayout">
+                {filtered.map((threat, i) => {
+                  const sev = severityConfig[threat.severity];
+                  const Icon = sourceIcons[threat.sourceIcon] || ShieldAlert;
+                  return (
+                    <motion.tr
+                      key={threat.id}
+                      layout
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ delay: i * 0.02 }}
+                      onClick={() => setSelected(threat)}
+                      className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                    >
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-wider ${sev.class}`}>
+                          {sev.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 max-w-md">
+                        <p className="text-text-primary truncate group-hover:text-cyan-glow/80 transition-colors">
+                          {threat.title}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <Icon className="w-3 h-3 text-text-tertiary" strokeWidth={1.5} />
+                          <span className="text-text-secondary">{threat.source}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-text-tertiary capitalize px-1.5 py-0.5 rounded bg-white/[0.03]">{threat.type}</span>
+                      </td>
+                      <td className="px-4 py-3 text-text-tertiary">{threat.timestamp}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-cyan-glow/10 text-cyan-glow transition-all">
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </AnimatePresence>
+            </tbody>
+          </table>
+        )}
       </div>
 
       <AnimatePresence>

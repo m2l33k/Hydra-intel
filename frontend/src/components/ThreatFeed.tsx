@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   GitBranch,
@@ -12,9 +12,10 @@ import {
   Send,
   Search,
   X,
+  Loader,
   type LucideProps,
 } from "lucide-react";
-import { threats, type ThreatItem, type Severity } from "@/lib/mock-data";
+import { fetchThreats, type ThreatItem, type Severity } from "@/lib/threats-api";
 
 const sourceIcons: Record<string, React.ComponentType<LucideProps>> = {
   github: GitBranch,
@@ -67,7 +68,9 @@ function ThreatModal({ threat, onClose }: { threat: ThreatItem; onClose: () => v
         </div>
 
         <h3 className="text-sm font-medium text-text-primary mb-3">{threat.title}</h3>
-        <p className="text-xs text-text-secondary leading-relaxed mb-4">{threat.description}</p>
+        <p className="text-xs text-text-secondary leading-relaxed mb-4">
+          {threat.description || "No description available."}
+        </p>
 
         {threat.ioc && (
           <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-glow/[0.06] border border-red-glow/20 mb-4">
@@ -77,14 +80,30 @@ function ThreatModal({ threat, onClose }: { threat: ThreatItem; onClose: () => v
           </div>
         )}
 
+        {threat.url && (
+          <div className="mb-4">
+            <a
+              href={threat.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-cyan-glow hover:underline break-all"
+            >
+              {threat.url}
+            </a>
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
           <span className="text-[10px] text-text-tertiary">{threat.timestamp}</span>
           <div className="flex gap-2">
-            <button className="px-3 py-1.5 text-[10px] text-text-secondary border border-white/10 rounded-lg hover:bg-white/[0.03]">
+            <button
+              onClick={() => {
+                const text = [threat.title, threat.ioc, threat.url].filter(Boolean).join("\n");
+                navigator.clipboard.writeText(text);
+              }}
+              className="px-3 py-1.5 text-[10px] text-text-secondary border border-white/10 rounded-lg hover:bg-white/[0.03]"
+            >
               Copy IOCs
-            </button>
-            <button className="px-3 py-1.5 text-[10px] text-cyan-glow bg-cyan-glow/10 border border-cyan-glow/20 rounded-lg hover:bg-cyan-glow/15">
-              Investigate
             </button>
           </div>
         </div>
@@ -94,8 +113,17 @@ function ThreatModal({ threat, onClose }: { threat: ThreatItem; onClose: () => v
 }
 
 export default function ThreatFeed() {
+  const [threats, setThreats] = useState<ThreatItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedThreat, setSelectedThreat] = useState<ThreatItem | null>(null);
   const [filter, setFilter] = useState<Severity | "all">("all");
+
+  useEffect(() => {
+    fetchThreats({ per_page: 30 })
+      .then((data) => setThreats(data.items))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = filter === "all" ? threats : threats.filter((t) => t.severity === filter);
 
@@ -117,7 +145,6 @@ export default function ThreatFeed() {
           <span className="text-[10px] text-text-tertiary">{filtered.length} items</span>
         </div>
 
-        {/* Severity Filters */}
         <div className="flex gap-1 mb-3">
           {(["all", "critical", "high", "medium", "low"] as const).map((sev) => (
             <button
@@ -136,8 +163,20 @@ export default function ThreatFeed() {
           ))}
         </div>
 
-        {/* Feed List */}
         <div className="flex-1 overflow-y-auto custom-scroll space-y-1.5 min-h-0">
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader className="w-4 h-4 text-cyan-glow animate-spin" />
+              <span className="ml-2 text-[10px] text-text-tertiary">Loading threats...</span>
+            </div>
+          )}
+
+          {!loading && filtered.length === 0 && (
+            <div className="text-center py-8 text-[10px] text-text-tertiary">
+              No threats found. Run collectors to populate data.
+            </div>
+          )}
+
           <AnimatePresence mode="popLayout">
             {filtered.map((threat, i) => {
               const Icon = sourceIcons[threat.sourceIcon] || ShieldAlert;
@@ -176,7 +215,6 @@ export default function ThreatFeed() {
         </div>
       </motion.div>
 
-      {/* Threat Detail Modal */}
       <AnimatePresence>
         {selectedThreat && (
           <ThreatModal

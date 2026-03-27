@@ -1,20 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Share2,
-  Maximize2,
   Download,
   Filter,
-  ZoomIn,
-  ZoomOut,
   Globe,
   Mail,
   Hash,
   Server,
   UserX,
   ShieldCheck,
+  Loader,
   type LucideProps,
 } from "lucide-react";
 import {
@@ -33,7 +31,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import PageShell from "@/components/PageShell";
-import { graphNodesExtended, graphEdgesExtended } from "@/lib/mock-data-extended";
+import { fetchThreats, type ThreatItem } from "@/lib/threats-api";
 
 const kindConfig: Record<string, { icon: React.ComponentType<LucideProps>; color: string; bg: string; label: string }> = {
   ip: { icon: Server, color: "#00f0ff", bg: "rgba(0,240,255,0.1)", label: "IP Address" },
@@ -76,14 +74,150 @@ function IntelNode({ data }: NodeProps) {
 
 const nodeTypes = { custom: IntelNode };
 
+interface IOCEntry {
+  id: string;
+  value: string;
+  kind: string;
+  severity: string;
+}
+
+function buildExtendedGraph(threats: ThreatItem[]): { nodes: Node[]; edges: Edge[] } {
+  const iocMap = new Map<string, IOCEntry>();
+  const connections: { from: string; to: string }[] = [];
+
+  for (const t of threats) {
+    const meta = t.metadata || {};
+    const nodesInThreat: string[] = [];
+
+    const addEntry = (value: string, kind: string) => {
+      const id = `${kind}:${value}`;
+      if (!iocMap.has(id)) {
+        iocMap.set(id, { id, value, kind, severity: t.severity });
+      }
+      nodesInThreat.push(id);
+    };
+
+    // CVE
+    const cveId = meta.cve_id as string | undefined;
+    if (cveId?.startsWith("CVE-")) addEntry(cveId, "cve");
+
+    // IP from metadata
+    const ip = meta.ip as string | undefined;
+    if (ip && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) addEntry(ip, "ip");
+
+    // Hash
+    const sha256 = meta.sha256 as string | undefined;
+    if (sha256 && sha256.length >= 32) addEntry(sha256.slice(0, 12) + "..." + sha256.slice(-4), "hash");
+
+    // IOC field
+    if (t.ioc) {
+      if (t.ioc.startsWith("CVE-")) addEntry(t.ioc, "cve");
+      else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(t.ioc)) addEntry(t.ioc, "ip");
+      else if (/^[a-f0-9]{32,64}$/i.test(t.ioc)) addEntry(t.ioc.slice(0, 12) + "..." + t.ioc.slice(-4), "hash");
+      else if (t.ioc.includes("@")) addEntry(t.ioc, "email");
+      else if (t.ioc.includes(".")) addEntry(t.ioc, "domain");
+    }
+
+    // Domain from URL
+    if (t.url?.startsWith("http")) {
+      try {
+        const domain = new URL(t.url).hostname;
+        if (domain && !domain.match(/^(\d+\.){3}\d+$/)) addEntry(domain, "domain");
+      } catch { /* skip */ }
+    }
+
+    // Emails in text
+    const text = t.title + " " + (t.description || "");
+    const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+    if (emailMatch) addEntry(emailMatch[0], "email");
+
+    // IPs in text
+    const ipMatches = text.matchAll(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g);
+    for (const m of ipMatches) {
+      if (!m[1].startsWith("0.") && !m[1].startsWith("127.") && !m[1].startsWith("10.")) {
+        addEntry(m[1], "ip");
+      }
+    }
+
+    // Connect all IOCs within the same threat
+    for (let a = 0; a < nodesInThreat.length; a++) {
+      for (let b = a + 1; b < nodesInThreat.length; b++) {
+        connections.push({ from: nodesInThreat[a], to: nodesInThreat[b] });
+      }
+    }
+  }
+
+  // Rank by connections, take top 20
+  const connCount = new Map<string, number>();
+  for (const c of connections) {
+    connCount.set(c.from, (connCount.get(c.from) || 0) + 1);
+    connCount.set(c.to, (connCount.get(c.to) || 0) + 1);
+  }
+
+  const topEntries = Array.from(iocMap.values())
+    .sort((a, b) => (connCount.get(b.id) || 0) - (connCount.get(a.id) || 0))
+    .slice(0, 20);
+
+  const topIds = new Set(topEntries.map((e) => e.id));
+
+  // Layout in a force-like grid
+  const centerX = 500;
+  const centerY = 350;
+  const radius = 280;
+
+  const nodes: Node[] = topEntries.map((entry, i) => {
+    const angle = (2 * Math.PI * i) / topEntries.length - Math.PI / 2;
+    const r = radius * (0.7 + Math.random() * 0.3);
+    return {
+      id: entry.id,
+      type: "custom",
+      position: { x: centerX + r * Math.cos(angle), y: centerY + r * Math.sin(angle) },
+      data: { label: entry.value, kind: entry.kind, severity: entry.severity },
+    };
+  });
+
+  const edgeSet = new Set<string>();
+  const edges: Edge[] = [];
+  for (const c of connections) {
+    if (!topIds.has(c.from) || !topIds.has(c.to)) continue;
+    const key = [c.from, c.to].sort().join("→");
+    if (edgeSet.has(key)) continue;
+    edgeSet.add(key);
+    const fromEntry = iocMap.get(c.from);
+    const isCritical = fromEntry?.severity === "critical";
+    edges.push({
+      id: `e-${edges.length}`,
+      source: c.from,
+      target: c.to,
+      animated: isCritical,
+      style: { stroke: isCritical ? "#ff3b5c" : "#00f0ff", strokeWidth: isCritical ? 2 : 1 },
+    });
+  }
+
+  return { nodes, edges };
+}
+
 export default function GraphPage() {
   const [mounted, setMounted] = useState(false);
-  const [nodes, , onNodesChange] = useNodesState(graphNodesExtended as Node[]);
-  const [edges, , onEdgesChange] = useEdgesState(graphEdgesExtended as Edge[]);
+  const [loading, setLoading] = useState(true);
+  const [graphNodes, setGraphNodes] = useState<Node[]>([]);
+  const [graphEdges, setGraphEdges] = useState<Edge[]>([]);
+  const [nodes, , onNodesChange] = useNodesState([] as Node[]);
+  const [edges, , onEdgesChange] = useEdgesState([] as Edge[]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [filters, setFilters] = useState<Set<string>>(new Set(["ip", "domain", "email", "hash", "actor", "cve"]));
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    fetchThreats({ per_page: 200 })
+      .then((data) => {
+        const graph = buildExtendedGraph(data.items);
+        setGraphNodes(graph.nodes);
+        setGraphEdges(graph.edges);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const toggleFilter = (kind: string) => {
     setFilters((prev) => {
@@ -94,9 +228,11 @@ export default function GraphPage() {
     });
   };
 
-  const visibleNodes = nodes.filter((n) => filters.has(n.data.kind as string));
+  const displayNodes = graphNodes.length > 0 ? graphNodes : nodes;
+  const displayEdges = graphEdges.length > 0 ? graphEdges : edges;
+  const visibleNodes = displayNodes.filter((n) => filters.has(n.data.kind as string));
   const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
-  const visibleEdges = edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+  const visibleEdges = displayEdges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
 
   return (
     <PageShell
@@ -112,7 +248,20 @@ export default function GraphPage() {
       <div className="grid grid-cols-4 gap-6 h-[calc(100vh-180px)]">
         {/* Graph Canvas */}
         <div className="col-span-3 glass-card overflow-hidden rounded-xl">
-          {mounted && (
+          {loading && (
+            <div className="h-full flex items-center justify-center">
+              <Loader className="w-5 h-5 text-cyan-glow animate-spin" />
+              <span className="ml-2 text-xs text-text-tertiary">Building threat graph...</span>
+            </div>
+          )}
+
+          {!loading && displayNodes.length === 0 && (
+            <div className="h-full flex items-center justify-center text-xs text-text-tertiary">
+              No IOC correlations found. Run collectors to populate data.
+            </div>
+          )}
+
+          {mounted && !loading && displayNodes.length > 0 && (
             <ReactFlow
               nodes={visibleNodes}
               edges={visibleEdges}
@@ -139,7 +288,6 @@ export default function GraphPage() {
                 }}
                 maskColor="rgba(0,0,0,0.7)"
               />
-              {/* Legend */}
               <Panel position="top-left">
                 <div className="glass-card p-3 space-y-1.5">
                   <p className="text-[9px] font-semibold tracking-wider text-text-tertiary uppercase font-[family-name:var(--font-display)] mb-2">
@@ -205,9 +353,9 @@ export default function GraphPage() {
                 <div className="p-3 rounded-lg bg-white/[0.02]">
                   <p className="text-[9px] text-text-tertiary uppercase mb-1">Connections</p>
                   <div className="space-y-1">
-                    {edges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id).map((e) => {
+                    {displayEdges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id).map((e) => {
                       const otherId = e.source === selectedNode.id ? e.target : e.source;
-                      const otherNode = nodes.find((n) => n.id === otherId);
+                      const otherNode = displayNodes.find((n) => n.id === otherId);
                       if (!otherNode) return null;
                       const config = kindConfig[otherNode.data.kind as string] || kindConfig.ip;
                       return (
